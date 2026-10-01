@@ -1,0 +1,49 @@
+name: PR 805 Windows Check
+
+on:
+  push:
+    branches:
+      - ci/pr805-windows-check
+  workflow_dispatch:
+
+jobs:
+  windows:
+    name: ${{ matrix.name }}
+    runs-on: windows-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: Windows Clang Win64
+            compiler: clang-cl
+            cmake-args: -G Ninja
+          - name: Windows MSVC Win64
+            compiler: cl
+            cmake-args: -A x64
+          - name: Windows GCC Ninja
+            compiler: gcc
+            cmake-args: -G Ninja
+          - name: Windows GCC MinGW
+            compiler: gcc
+            cmake-args: -G "MinGW Makefiles"
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Install packages
+        run: choco install ninja
+
+      - name: Generate project files
+        run: cmake -S . -B . ${{ matrix.cmake-args }} -D CMAKE_BUILD_TYPE=Release -D BUILD_SHARED_LIBS=OFF -D CMAKE_C_COMPILER=${{ matrix.compiler }} -D CMAKE_CXX_COMPILER=${{ matrix.compiler }}
+        env:
+          CC: ${{ matrix.compiler }}
+          CI: true
+
+      - name: Compile source code
+        run: cmake --build . --config Release --parallel 4
+
+      - name: Run regression tests
+        run: ctest -C Release -R "^(test_change_nthreads_append|test_frame)$" --output-on-failure
+
+      - name: Run full test suite
+        run: ctest -C Release -j 4 --output-on-failure --max-width 120

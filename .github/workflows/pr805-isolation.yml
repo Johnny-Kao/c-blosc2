@@ -23,16 +23,10 @@ jobs:
           old='int32_t workers = context->nthreads < context->nblocks ? context->nthreads : context->nblocks;'
           assert s.count(old)==1
           s=s.replace(old,'int32_t workers = context->nthreads;')
-          wake='''if (enqueued < pool->nthreads) {
-            for (int32_t i = 0; i < enqueued; ++i) {
-              blosc2_pthread_cond_signal(&pool->work_cv);
-            }
-          }
-          else {
-            blosc2_pthread_cond_broadcast(&pool->work_cv);
-          }'''
-          assert s.count(wake)==1
-          s=s.replace(wake,'blosc2_pthread_cond_broadcast(&pool->work_cv);')
+          import re
+          pattern=r'if \(enqueued < pool->nthreads\) \{\s*for \(int32_t i = 0; i < enqueued; \+\+i\) \{\s*blosc2_pthread_cond_signal\(&pool->work_cv\);\s*\}\s*\}\s*else \{\s*blosc2_pthread_cond_broadcast\(&pool->work_cv\);\s*\}'
+          s,count=re.subn(pattern,'blosc2_pthread_cond_broadcast(&pool->work_cv);',s)
+          assert count==1, ('a-only wake replacement',count)
           a.write_text(s)
           b=Path('/tmp/b_only/blosc/blosc2.c')
           s=b.read_text()

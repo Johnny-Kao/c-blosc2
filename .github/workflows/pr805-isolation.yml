@@ -34,19 +34,15 @@ jobs:
           assert s.count(old)==1
           s=s.replace(old,'''int32_t workers = context->nthreads < context->nblocks ? context->nthreads : context->nblocks;
             for (int32_t tid = 0; tid < workers; ++tid) {''')
-          target='''blosc2_pthread_mutex_unlock(&job.mutex);
-            blosc2_pthread_cond_broadcast(&pool->work_cv);
-            blosc2_pthread_mutex_unlock(&pool->mutex);'''
-          assert s.count(target)==1
-          s=s.replace(target,'''blosc2_pthread_mutex_unlock(&job.mutex);
-            if (enqueued < pool->nthreads) {
+          target='blosc2_pthread_cond_broadcast(&pool->work_cv);'
+          assert s.count(target)==1, ('B-only broadcast count',s.count(target))
+          s=s.replace(target,'''if (enqueued < pool->nthreads) {
               for (int32_t i = 0; i < enqueued; ++i) {
                 blosc2_pthread_cond_signal(&pool->work_cv);
               }
             } else {
               blosc2_pthread_cond_broadcast(&pool->work_cv);
-            }
-            blosc2_pthread_mutex_unlock(&pool->mutex);''')
+            }''')
           b.write_text(s)
           print("Verified mechanism isolation: A-only suppresses dispatch change; B-only applies dispatch change to baseline.")
           PY

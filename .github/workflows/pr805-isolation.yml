@@ -1,0 +1,88 @@
+name: PR805 mechanism isolation
+on:
+  push:
+    branches: [research/pr805-mechanism-isolation-20261009]
+jobs:
+  isolate:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build four variants
+        run: |
+          set -euo pipefail
+          git fetch origin 6b06dd65dbf7927a9339e4f687637f97668a181a d2409997375b60cd45f58e74e69e84b5e17d6907
+          git worktree add --detach /tmp/base 6b06dd65dbf7927a9339e4f687637f97668a181a
+          git worktree add --detach /tmp/full d2409997375b60cd45f58e74e69e84b5e17d6907
+          cp -a /tmp/full /tmp/a_only
+          cp -a /tmp/base /tmp/b_only
+          python3 - <<'PY'
+          from pathlib import Path
+          a=Path('/tmp/a_only/blosc/blosc2.c')
+          s=a.read_text()
+          old='int32_t workers = context->nthreads < context->nblocks ? context->nthreads : context->nblocks;'
+          assert s.count(old)==1
+          s=s.replace(old,'int32_t workers = context->nthreads;')
+          wake='''if (enqueued < pool->nthreads) {
+            for (int32_t i = 0; i < enqueued; ++i) {
+              blosc2_pthread_cond_signal(&pool->work_cv);
+            }
+          }
+          else {
+            blosc2_pthread_cond_broadcast(&pool->work_cv);
+          }'''
+          assert s.count(wake)==1
+          s=s.replace(wake,'blosc2_pthread_cond_broadcast(&pool->work_cv);')
+          a.write_text(s)
+          b=Path('/tmp/b_only/blosc/blosc2.c')
+          s=b.read_text()
+          old='for (int32_t tid = 0; tid < context->nthreads; ++tid) {'
+          assert s.count(old)==1
+          s=s.replace(old,'''int32_t workers = context->nthreads < context->nblocks ? context->nthreads : context->nblocks;
+            for (int32_t tid = 0; tid < workers; ++tid) {''')
+          target='''blosc2_pthread_mutex_unlock(&job.mutex);
+            blosc2_pthread_cond_broadcast(&pool->work_cv);
+            blosc2_pthread_mutex_unlock(&pool->mutex);'''
+          assert s.count(target)==1
+          s=s.replace(target,'''blosc2_pthread_mutex_unlock(&job.mutex);
+            if (enqueued < pool->nthreads) {
+              for (int32_t i = 0; i < enqueued; ++i) {
+                blosc2_pthread_cond_signal(&pool->work_cv);
+              }
+            } else {
+              blosc2_pthread_cond_broadcast(&pool->work_cv);
+            }
+            blosc2_pthread_mutex_unlock(&pool->mutex);''')
+          b.write_text(s)
+          print("Verified mechanism isolation: A-only suppresses dispatch change; B-only applies dispatch change to baseline.")
+          PY
+          for variant in base full a_only b_only; do
+            cmake -S /tmp/$variant -B /tmp/build-$variant -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTS=OFF -DBUILD_EXAMPLES=OFF
+            cmake --build /tmp/build-$variant --parallel 2
+            LIB=$(find /tmp/build-$variant -name 'libblosc2.so*' -type f | head -n 1)
+            test -n "$LIB"
+            cc -O2 -std=c11 -I /tmp/$variant/include tests/pr805_realdata_bench.c "$LIB" -Wl,-rpath,"$(dirname "$LIB")" -o /tmp/bench-$variant
+          done
+      - name: Compare four variants, paired within runner
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import subprocess,statistics,json
+          variants=('base','a_only','b_only','full')
+          results=[]
+          for reusable in (0,1):
+           for size,threads in ((16384,4),(16384,16),(49152,4),(49152,16),(65536,16),(131072,16),(524288,16)):
+            samples={k:[] for k in variants}
+            for round_ in range(9):
+             order=variants if round_%2==0 else tuple(reversed(variants))
+             for v in order:
+              args=[f'/tmp/bench-{v}','bench/rainfall-grid-150x150.bin',str(size),str(threads),'250',str(reusable)]
+              output=subprocess.check_output(args,text=True)
+              ms=float(output.split('mean_us=')[1].split(',')[0])
+              samples[v].append(ms)
+            med={v:statistics.median(samples[v]) for v in variants}
+            result={'reuse':reusable,'bytes':size,'threads':threads,'mean_us_medians':med,'speedups_vs_base':{v:med['base']/med[v] for v in variants},'samples':samples}
+            results.append(result)
+            print('ISOLATION '+json.dumps(result,sort_keys=True),flush=True)
+          print('TOTAL_SCENARIOS',len(results),flush=True)
+          PY

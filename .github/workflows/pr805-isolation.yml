@@ -27,14 +27,14 @@ jobs:
               if variant=='cap_signal':
                   before='job.pending_workers = enqueued;\n    blosc2_pthread_mutex_unlock(&job.mutex);\n    blosc2_pthread_cond_broadcast(&pool->work_cv);'
                   after='''job.pending_workers = enqueued;
-    blosc2_pthread_mutex_unlock(&job.mutex);
-    if (enqueued < pool->nthreads) {
-      for (int32_t i = 0; i < enqueued; ++i) {
-        blosc2_pthread_cond_signal(&pool->work_cv);
-      }
-    } else {
-      blosc2_pthread_cond_broadcast(&pool->work_cv);
-    }'''
+              blosc2_pthread_mutex_unlock(&job.mutex);
+              if (enqueued < pool->nthreads) {
+                for (int32_t i = 0; i < enqueued; ++i) {
+                  blosc2_pthread_cond_signal(&pool->work_cv);
+                }
+              } else {
+                blosc2_pthread_cond_broadcast(&pool->work_cv);
+              }'''
                   assert s.count(before)==1, ('wake-site',variant)
                   s=s.replace(before,after)
               f.write_text(s)

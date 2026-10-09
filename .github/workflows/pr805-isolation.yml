@@ -36,7 +36,9 @@ jobs:
             for (int32_t tid = 0; tid < workers; ++tid) {''')
           target='blosc2_pthread_cond_broadcast(&pool->work_cv);'
           assert s.count(target)>=1, ('B-only broadcast count',s.count(target))
-          target='blosc2_pthread_mutex_unlock(&job.mutex);\n    '+target+'\n    blosc2_pthread_mutex_unlock(&pool->mutex);'\n          assert s.count(target)==1, ('B-only exact job dispatch',s.count(target))\n          s=s.replace(target,'''blosc2_pthread_mutex_unlock(&job.mutex);\n    if (enqueued < pool->nthreads) {
+          target='blosc2_pthread_mutex_unlock(&job.mutex);\n    '+target+'\n    blosc2_pthread_mutex_unlock(&pool->mutex);'
+          assert s.count(target)==1, ('B-only exact job dispatch',s.count(target))
+          s=s.replace(target,'''blosc2_pthread_mutex_unlock(&job.mutex);\n    if (enqueued < pool->nthreads) {
               for (int32_t i = 0; i < enqueued; ++i) {
                 blosc2_pthread_cond_signal(&pool->work_cv);
               }

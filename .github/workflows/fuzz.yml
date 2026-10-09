@@ -1,25 +1,7 @@
-name: CI Fuzz
-on: [push, pull_request]
+name: CI Fuzz (research branch disabled)
+on: workflow_dispatch
 jobs:
-  Fuzzing:
+  disabled:
     runs-on: ubuntu-latest
     steps:
-    - name: Build Fuzzers
-      uses: google/oss-fuzz/infra/cifuzz/actions/build_fuzzers@master
-      with:
-        oss-fuzz-project-name: 'c-blosc2'
-        dry-run: false
-
-    - name: Run Fuzzers
-      uses: google/oss-fuzz/infra/cifuzz/actions/run_fuzzers@master
-      with:
-        oss-fuzz-project-name: 'c-blosc2'
-        fuzz-seconds: 600
-        dry-run: false
-
-    - name: Upload Crash
-      uses: actions/upload-artifact@v7
-      if: failure()
-      with:
-        name: artifacts
-        path: ./out/artifacts
+      - run: echo 'Normal fuzz CI retained on original branch.'

@@ -1,0 +1,55 @@
+name: PR805 paired real-data benchmark
+on:
+  push:
+    branches:
+      - research/pr805-realdata-benchmark-20261009
+  workflow_dispatch:
+jobs:
+  paired:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Build baseline and patched versions
+        shell: bash
+        run: |
+          set -euo pipefail
+          git worktree add --detach /tmp/blosc-base 6b06dd65dbf7927a9339e4f687637f97668a181a
+          git worktree add --detach /tmp/blosc-patched d2409997375b60cd45f58e74e69e84b5e17d6907
+          for variant in base patched; do
+            cmake -S /tmp/blosc-$variant -B /tmp/build-$variant -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTS=OFF -DBUILD_BENCHMARKS=OFF -DBUILD_EXAMPLES=OFF
+            cmake --build /tmp/build-$variant --parallel 2
+            LIB=$(find /tmp/build-$variant -name 'libblosc2.so*' -type f | head -n 1)
+            test -n "$LIB"
+            cc -O2 -std=c11 -I /tmp/blosc-$variant/include tests/pr805_realdata_bench.c "$LIB" -Wl,-rpath,"$(dirname "$LIB")" -o /tmp/pr805-$variant
+          done
+      - name: Paired repeated runs on same runner
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import subprocess, statistics, json
+          source='bench/rainfall-grid-150x150.bin'
+          sizes=[16384,65536,131072,524288]
+          threads=[4,16]
+          records=[]
+          for size in sizes:
+            for nt in threads:
+              by={}
+              for round_ in range(5):
+                order=('base','patched') if round_%2==0 else ('patched','base')
+                for variant in order:
+                  cmd=[f'/tmp/pr805-{variant}',source,str(size),str(nt),'350']
+                  output=subprocess.check_output(cmd,text=True).strip()
+                  value=float(output.split('mean_us=')[1].split(',')[0])
+                  by.setdefault(variant,[]).append(value)
+                  print(f'PAIR size={size} nthreads={nt} round={round_+1} variant={variant} {output}',flush=True)
+              before=statistics.median(by['base'])
+              after=statistics.median(by['patched'])
+              record={'bytes':size,'threads':nt,'baseline_median_us':before,'patched_median_us':after,'speedup':before/after,'samples_per_variant':5,'iterations_per_sample':350}
+              records.append(record)
+              print('SUMMARY '+json.dumps(record,sort_keys=True),flush=True)
+          print('ALL_RESULTS '+json.dumps(records,sort_keys=True),flush=True)
+          PY

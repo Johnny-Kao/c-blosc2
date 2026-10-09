@@ -45,7 +45,7 @@ jobs:
             } else {
               blosc2_pthread_cond_broadcast(&pool->work_cv);
             }
-    blosc2_pthread_mutex_unlock(&pool->mutex);''')
+            blosc2_pthread_mutex_unlock(&pool->mutex);''')
           b.write_text(s)
           print("Verified mechanism isolation: A-only suppresses dispatch change; B-only applies dispatch change to baseline.")
           PY

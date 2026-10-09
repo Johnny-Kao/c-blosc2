@@ -50,7 +50,7 @@ jobs:
           print("Verified mechanism isolation: A-only suppresses dispatch change; B-only applies dispatch change to baseline.")
           PY
           for variant in base full a_only b_only; do
-            cmake -S /tmp/$variant -B /tmp/build-$variant -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTS=OFF -DBUILD_EXAMPLES=OFF
+            cmake -S /tmp/$variant -B /tmp/build-$variant -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTS=OFF -DBUILD_BENCHMARKS=OFF -DBUILD_EXAMPLES=OFF
             cmake --build /tmp/build-$variant --parallel 2
             LIB=$(find /tmp/build-$variant -name 'libblosc2.so*' -type f | head -n 1)
             test -n "$LIB"

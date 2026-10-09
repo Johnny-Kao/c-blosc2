@@ -32,23 +32,26 @@ jobs:
           python3 - <<'PY'
           import subprocess, statistics, json
           source='bench/rainfall-grid-150x150.bin'
-          sizes=[16384,65536,131072,524288]
+          sizes=[16384,49152,65536,131072,524288]
           threads=[4,16]
           records=[]
-          for size in sizes:
+          for mode in (0,1):
+           for size in sizes:
             for nt in threads:
               by={}
-              for round_ in range(5):
+              for round_ in range(9):
                 order=('base','patched') if round_%2==0 else ('patched','base')
                 for variant in order:
-                  cmd=[f'/tmp/pr805-{variant}',source,str(size),str(nt),'350']
+                  cmd=[f'/tmp/pr805-{variant}',source,str(size),str(nt),'350',str(mode)]
                   output=subprocess.check_output(cmd,text=True).strip()
                   value=float(output.split('mean_us=')[1].split(',')[0])
                   by.setdefault(variant,[]).append(value)
-                  print(f'PAIR size={size} nthreads={nt} round={round_+1} variant={variant} {output}',flush=True)
+                  print(f'PAIR mode={mode} size={size} nthreads={nt} round={round_+1} variant={variant} {output}',flush=True)
               before=statistics.median(by['base'])
               after=statistics.median(by['patched'])
-              record={'bytes':size,'threads':nt,'baseline_median_us':before,'patched_median_us':after,'speedup':before/after,'samples_per_variant':5,'iterations_per_sample':350}
+              record={'reusable':bool(mode),'bytes':size,'threads':nt,'baseline_median_us':before,'patched_median_us':after,'speedup':before/after,'samples_per_variant':9,'iterations_per_sample':350}
+              record['pair_speedups']=[by['base'][j]/by['patched'][j] for j in range(9)]
+              record['pair_median_speedup']=statistics.median(record['pair_speedups'])
               records.append(record)
               print('SUMMARY '+json.dumps(record,sort_keys=True),flush=True)
           print('ALL_RESULTS '+json.dumps(records,sort_keys=True),flush=True)
